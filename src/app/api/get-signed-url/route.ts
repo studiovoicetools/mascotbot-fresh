@@ -1,23 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
+    const { dynamicVariables } = body;
+
     // Use Mascot Bot proxy endpoint for automatic viseme injection
     const response = await fetch("https://api.mascot.bot/v1/get-signed-url", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.MASCOT_BOT_API_KEY}`,
         "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
       },
       body: JSON.stringify({
         config: {
-          api_key: `Bearer ${process.env.MASCOT_BOT_API_KEY}`,
           provider: "elevenlabs",
           provider_config: {
             agent_id: process.env.ELEVENLABS_AGENT_ID,
             api_key: process.env.ELEVENLABS_API_KEY,
+            ...(dynamicVariables && { dynamic_variables: dynamicVariables }),
           },
         },
       }),

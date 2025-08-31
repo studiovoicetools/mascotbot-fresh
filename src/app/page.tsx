@@ -11,7 +11,11 @@ import {
   useMascotElevenlabs,
 } from "@mascotbot-sdk/react";
 
-function ElevenLabsAvatar() {
+interface ElevenLabsAvatarProps {
+  dynamicVariables?: Record<string, string | number | boolean>;
+}
+
+function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [cachedUrl, setCachedUrl] = useState<string | null>(null);
@@ -70,11 +74,16 @@ function ElevenLabsAvatar() {
 
   // Get signed URL for ElevenLabs
   const getSignedUrl = async (): Promise<string> => {
-    const response = await fetch(`/api/get-signed-url?t=${Date.now()}`, {
-      cache: "no-store",
+    const response = await fetch(`/api/get-signed-url`, {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         "Cache-Control": "no-cache",
       },
+      body: JSON.stringify({ 
+        dynamicVariables: dynamicVariables || {} 
+      }),
+      cache: "no-store",
     });
     if (!response.ok) {
       throw new Error(`Failed to get signed url: ${response.statusText}`);
@@ -94,7 +103,7 @@ function ElevenLabsAvatar() {
       console.error("Failed to fetch signed URL:", error);
       setCachedUrl(null);
     }
-  }, []);
+  }, [dynamicVariables]);
 
   // Set up URL pre-fetching and refresh
   useEffect(() => {
@@ -140,13 +149,16 @@ function ElevenLabsAvatar() {
       if (!signedUrl) {
         throw new Error("The signed URL is missing.");
       }
-      await conversation.startSession({ signedUrl });
+      await conversation.startSession({ 
+        signedUrl,
+        dynamicVariables: dynamicVariables 
+      });
     } catch (error) {
       console.error("Failed to start conversation:", error);
       setIsConnecting(false);
       connectionStartTime.current = null;
     }
-  }, [conversation, cachedUrl]);
+  }, [conversation, cachedUrl, dynamicVariables]);
 
   // Stop conversation
   const stopConversation = useCallback(async () => {
@@ -246,6 +258,12 @@ export default function Home() {
   // Available with Mascot Bot SDK subscription
   const mascotUrl = "/mascot.riv";
 
+  // Hardcoded dynamic variables for testing
+  const dynamicVariables = {
+    name: "Charlie",
+    // Add more variables as needed
+  };
+
   return (
     <MascotProvider>
       <main className="w-full h-screen">
@@ -258,7 +276,7 @@ export default function Home() {
             alignment: Alignment.BottomCenter,
           }}
         >
-          <ElevenLabsAvatar />
+          <ElevenLabsAvatar dynamicVariables={dynamicVariables} />
         </MascotClient>
       </main>
     </MascotProvider>
