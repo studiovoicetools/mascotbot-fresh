@@ -63,11 +63,14 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onDebug: () => {},
     clientTools: {
       brain_query: async ({ message }: { message: string }) => {
+        // Punkt am Ende entfernen (ElevenLabs Transkription hat immer Punkt)
+        const cleanMessage = message.replace(/[.!?]+$/, '').trim();
+        console.log("🔥 brain_query CALLED with:", cleanMessage, "shopDomain:", shopDomain);
         try {
           const response = await fetch(`${API_URL}/api/brain/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, shopDomain }),
+            body: JSON.stringify({ message: cleanMessage, shopDomain }),
           });
           const data = await response.json();
           // Produkte auch im Chat anzeigen
@@ -78,9 +81,11 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
               products: data.products?.slice(0, 3),
             }]);
           }
+          console.log("✅ brain_query RESULT:", data.replyText, "products:", data.products?.length);
           return data.replyText || "Ich konnte keine Informationen finden.";
         } catch (error) {
           console.error("Brain query error:", error);
+          console.error("❌ brain_query FETCH ERROR:", error);
           return "Entschuldigung, es gab einen Fehler.";
         }
       },
