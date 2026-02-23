@@ -33,7 +33,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [cachedUrl, setCachedUrl] = useState<string | null>(null);
-  const manualDisconnect = useRef<boolean>(false);
   const urlRefreshInterval = useRef<NodeJS.Timeout | null>(null);
   const connectionStartTime = useRef<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([
@@ -51,45 +50,14 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const conversation = useConversation({
     micMuted: isMuted,
     onConnect: () => { setIsConnecting(false); },
-    onDisconnect: () => {
-      setIsConnecting(false);
-      if (!manualDisconnect.current && cachedUrl) {
-        setTimeout(() => { startConversation(); }, 3000);
-      }
-      manualDisconnect.current = false;
-    },
+    onDisconnect: () => { setIsConnecting(false); },
     onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: () => {},
-    onDebug: () => {},
-    clientTools: {
-      brain_query: async ({ message }: { message: string }) => {
-        try {
-          const response = await fetch(`${API_URL}/api/brain/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, shopDomain }),
-          });
-          const data = await response.json();
-          // Produkte auch im Chat anzeigen
-          if (data.replyText) {
-            setMessages(prev => [...prev, {
-              text: data.replyText,
-              sender: "bot",
-              products: data.products?.slice(0, 3),
-            }]);
-          }
-          return data.replyText || "Ich konnte keine Informationen finden.";
-        } catch (error) {
-          console.error("Brain query error:", error);
-          return "Entschuldigung, es gab einen Fehler.";
-        }
-      },
-    },
+    onDebug: () => {}
   });
 
-  const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
+  const { isIntercepting } = useMascotElevenlabs({
     conversation,
-    debug: true,
     gesture: true,
     naturalLipSync: true,
     naturalLipSyncConfig: {
@@ -172,7 +140,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   }, [conversation, cachedUrl, dynamicVariables]);
 
   const stopConversation = useCallback(async () => {
-    manualDisconnect.current = true;
     await conversation.endSession();
   }, [conversation]);
 

@@ -5,26 +5,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { dynamicVariables } = body;
 
-    // Use Mascot Bot proxy endpoint for automatic viseme injection
-    const response = await fetch("https://api.mascot.bot/v1/get-signed-url", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.MASCOT_BOT_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        config: {
-          provider: "elevenlabs",
-          provider_config: {
-            agent_id: process.env.ELEVENLABS_AGENT_ID,
-            api_key: process.env.ELEVENLABS_API_KEY,
-            ...(dynamicVariables && { dynamic_variables: dynamicVariables }),
-          },
+    const agentId = process.env.ELEVENLABS_AGENT_ID;
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
+      {
+        method: "GET",
+        headers: {
+          "xi-api-key": apiKey!,
         },
-      }),
-      // Ensure fresh URL for WebSocket avatar connection
-      cache: "no-store",
-    });
+        cache: "no-store",
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -43,5 +36,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Force dynamic to prevent caching issues
 export const dynamic = "force-dynamic";

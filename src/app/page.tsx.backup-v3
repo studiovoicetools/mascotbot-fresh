@@ -1,0 +1,295 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useConversation } from "@elevenlabs/react";
+import {
+  Alignment,
+  Fit,
+  MascotClient,
+  MascotProvider,
+  MascotRive,
+  useMascotElevenlabs,
+} from "@mascotbot-sdk/react";
+
+interface Message {
+  text: string;
+  sender: 'user' | 'bot';
+  products?: Product[];
+}
+
+interface Product {
+  title: string;
+  price: string;
+  image?: string;
+  url?: string;
+  handle?: string;
+}
+
+interface ElevenLabsAvatarProps {
+  dynamicVariables?: Record<string, string | number | boolean>;
+}
+
+function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+  const urlRefreshInterval = useRef<NodeJS.Timeout | null>(null);
+  const connectionStartTime = useRef<number | null>(null);
+
+  const [chatOpen, setChatOpen] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([
+    { text: "Hallo! 👋 Ich bin EFRO, dein KI-Verkäufer. Wie kann ich dir helfen?", sender: 'bot' }
+  ]);
+  const [userInput, setUserInput] = useState("");
+
+  const shopDomain = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('shop') || 'avatarsalespro-dev.myshopify.com'
+    : 'avatarsalespro-dev.myshopify.com';
+
+  const API_URL = process.env.NEXT_PUBLIC_BRAIN_API_URL || 'https://efro-brain-api.onrender.com';
+
+  const [naturalLipSyncEnabled] = useState(true);
+  const [lipSyncConfig] = useState({
+    minVisemeInterval: 40,
+    mergeWindow: 60,
+    keyVisemePreference: 0.6,
+    preserveSilence: true,
+    similarityThreshold: 0.4,
+    preserveCriticalVisemes: true,
+    criticalVisemeMinDuration: 80,
+  });
+
+  const conversation = useConversation({
+    micMuted: isMuted,
+    onConnect: () => {
+      setIsConnecting(false);
+      if (connectionStartTime.current) {
+        connectionStartTime.current = null;
+      }
+    },
+    onDisconnect: () => { setIsConnecting(false); },
+    onError: (error: any) => {
+      console.error("ElevenLabs Error:", error);
+      setIsConnecting(false);
+    },
+    onMessage: () => {},
+    onDebug: () => {}
+  });
+
+  const { isIntercepting } = useMascotElevenlabs({
+    conversation,
+    gesture: true,
+    naturalLipSync: naturalLipSyncEnabled,
+    naturalLipSyncConfig: lipSyncConfig,
+  });
+
+  const getSignedUrl = async (): Promise<string> => {
+    const response = await fetch(`/api/get-signed-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      body: JSON.stringify({ dynamicVariables: dynamicVariables || {} }),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Failed to get signed url: ${response.statusText}`);
+    const data = await response.json();
+    return data.signedUrl;
+  };
+
+  const fetchAndCacheUrl = useCallback(async () => {
+    try {
+      const url = await getSignedUrl();
+      setCachedUrl(url);
+    } catch (error) {
+      setCachedUrl(null);
+    }
+  }, [dynamicVariables]);
+
+  useEffect(() => {
+    fetchAndCacheUrl();
+    urlRefreshInterval.current = setInterval(() => { fetchAndCacheUrl(); }, 9 * 60 * 1000);
+    return () => {
+      if (urlRefreshInterval.current) clearInterval(urlRefreshInterval.current);
+    };
+  }, [fetchAndCacheUrl]);
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    setMessages(prev => [...prev, { text, sender: 'user' }]);
+    setUserInput("");
+    try {
+      const response = await fetch(`${API_URL}/api/brain/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, shopDomain })
+      });
+      const data = await response.json();
+      setMessages(prev => [...prev, {
+        text: data.replyText,
+        sender: 'bot',
+        products: data.products?.slice(0, 3)
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, { text: 'Entschuldigung, es gab einen Fehler.', sender: 'bot' }]);
+    }
+  };
+
+  const startConversation = useCallback(async () => {
+    try {
+      setIsConnecting(true);
+      connectionStartTime.current = Date.now();
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      let signedUrl = cachedUrl;
+      if (!signedUrl) signedUrl = await getSignedUrl();
+      if (!signedUrl) throw new Error("The signed URL is missing.");
+      await conversation.startSession({ signedUrl, dynamicVariables });
+    } catch (error) {
+      console.error("Failed to start conversation:", error);
+      setIsConnecting(false);
+      connectionStartTime.current = null;
+    }
+  }, [conversation, cachedUrl, dynamicVariables]);
+
+  const stopConversation = useCallback(async () => {
+    await conversation.endSession();
+  }, [conversation]);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted(prev => !prev);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 overflow-hidden flex flex-row" style={{ backgroundColor: "#FFF8F0" }}>
+      {/* Avatar Section */}
+      <div className="flex-1 relative">
+        <div className="absolute inset-0 pointer-events-none" style={{ opacity: 0.4 }}>
+          <img src="/bg_pattern.svg" alt="" className="object-cover object-center w-full h-full" />
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-full h-full">
+            <MascotRive />
+          </div>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 pointer-events-none"
+          style={{ height: "25%", background: "linear-gradient(180deg, #FFF8F000 0%, #FFF8F0 90%)" }}
+        />
+        {/* Status */}
+        <div className="absolute top-4 left-4 bg-black/30 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg z-10">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${conversation.status === 'connected' ? 'bg-green-400' : 'bg-gray-400'}`}></div>
+            <span>{conversation.status === 'connected' ? 'Voice ON' : 'Voice OFF'}</span>
+          </div>
+          <div className="mt-1">LipSync: {isIntercepting ? "✓" : "○"}</div>
+        </div>
+        {/* Voice Controls */}
+        <div className="absolute bottom-7 left-0 right-0 flex justify-center z-20">
+          {conversation.status === "connected" ? (
+            <div className="flex gap-x-5">
+              <button
+                className="inline-flex items-center justify-center h-16 w-fit p-5 text-lg font-mono rounded-[3px] transition hover:opacity-90"
+                style={{ backgroundColor: "#FF4444", color: "#FFFFFF" }}
+                onClick={stopConversation}
+              >End Call</button>
+              <button
+                onClick={toggleMute}
+                className="inline-flex items-center justify-center h-16 w-fit p-5 text-lg font-mono rounded-[3px] transition hover:opacity-90 border"
+                style={{ backgroundColor: isMuted ? "rgba(255,255,255,0.9)" : "#FFFFFF", color: "rgba(91,71,55,0.85)", borderColor: "rgba(139,108,80,0.2)" }}
+              >{isMuted ? "Unmute" : "Mute"}</button>
+            </div>
+          ) : (
+            <button
+              onClick={startConversation}
+              disabled={isConnecting}
+              className={`inline-flex items-center justify-center h-16 w-fit p-5 text-lg font-mono rounded-[3px] transition ${isConnecting ? "pointer-events-none opacity-50" : "hover:opacity-90"}`}
+              style={{ backgroundColor: "#FF8A3D", color: "#FFFFFF" }}
+            >{isConnecting ? "Connecting..." : "Start Voice Mode"}</button>
+          )}
+        </div>
+      </div>
+
+      {/* Chat Toggle Button (when closed) */}
+      {!chatOpen && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <button
+            onClick={() => setChatOpen(true)}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
+          >
+            <span className="text-3xl">💬</span>
+          </button>
+        </div>
+      )}
+
+      {/* Chat Section */}
+      {chatOpen && (
+        <div className="w-96 bg-white flex flex-col border-l-4 border-purple-600" style={{ flexShrink: 0 }}>
+          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 flex justify-between items-center">
+            <div>
+              <h2 className="font-bold text-lg">EFRO Chat</h2>
+              <p className="text-sm opacity-90">KI Verkaufsassistent</p>
+            </div>
+            <button onClick={() => setChatOpen(false)} className="text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition">✕</button>
+          </div>
+          <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50">
+            {messages.map((msg, i) => (
+              <div key={i}>
+                <div className={`p-3 rounded-xl ${msg.sender === 'user' ? 'bg-purple-500 text-white ml-auto max-w-[85%]' : 'bg-white shadow-sm max-w-[85%]'}`}>
+                  {msg.text}
+                </div>
+                {msg.products && msg.products.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {msg.products.map((product, j) => (
+                      <a key={j} href={product.url || `https://${shopDomain}/products/${product.handle || ''}`} target="_parent"
+                        className="flex gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-purple-300 transition">
+                        {product.image && <img src={product.image} alt={product.title} className="w-16 h-16 object-cover rounded-md" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm text-gray-800 truncate">{product.title}</div>
+                          <div className="text-purple-600 font-bold text-lg">{product.price}</div>
+                        </div>
+                        <div className="flex items-center text-purple-500">→</div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="p-4 border-t bg-white">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage(userInput)}
+                placeholder="Frag mich nach Produkten..."
+                className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-full focus:outline-none focus:border-purple-500 transition"
+              />
+              <button onClick={() => sendMessage(userInput)} className="bg-purple-500 hover:bg-purple-600 text-white w-12 h-12 rounded-full flex items-center justify-center transition">➤</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Home() {
+  const mascotUrl = "/retroBot.riv";
+  const dynamicVariables = { name: "EFRO" };
+
+  return (
+    <MascotProvider>
+      <main className="w-full h-screen">
+        <MascotClient
+          src={mascotUrl}
+          artboard="Character"
+          inputs={["is_speaking", "gesture"]}
+          layout={{
+            fit: Fit.Contain,
+            alignment: Alignment.BottomCenter,
+          }}
+        >
+          <ElevenLabsAvatar dynamicVariables={dynamicVariables} />
+        </MascotClient>
+      </main>
+    </MascotProvider>
+  );
+}
