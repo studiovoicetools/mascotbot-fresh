@@ -157,8 +157,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     }
   };
 
+  const isStartingRef = useRef(false);
+
   const startConversation = useCallback(async () => {
+    if (isStartingRef.current || conversation.status === "connected" || conversation.status === "connecting") {
+      console.log("startConversation blocked - already starting or connected");
+      return;
+    }
     try {
+      isStartingRef.current = true;
       setIsConnecting(true);
       connectionStartTime.current = Date.now();
       await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -169,6 +176,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     } catch (error) {
       console.error("Failed to start conversation:", error);
       setIsConnecting(false);
+    } finally {
+      isStartingRef.current = false;
     }
   }, [conversation, cachedUrl, dynamicVariables]);
 
