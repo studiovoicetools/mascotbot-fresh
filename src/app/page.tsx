@@ -52,11 +52,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     micMuted: isMuted,
     onConnect: () => { setIsConnecting(false); },
     onDisconnect: () => {
+      console.log("ElevenLabs Disconnected");
       setIsConnecting(false);
-      if (!manualDisconnect.current && cachedUrl) {
-        setTimeout(() => { startConversation(); }, 3000);
-      }
-      manualDisconnect.current = false;
     },
     onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: () => {},
@@ -94,7 +91,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
     conversation,
-    debug: true,
     gesture: true,
     naturalLipSync: true,
     naturalLipSyncConfig: {
@@ -104,6 +100,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       preserveSilence: true,
       similarityThreshold: 0.4,
       preserveCriticalVisemes: true,
+      criticalVisemeMinDuration: 80,
     },
   });
 
