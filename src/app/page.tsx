@@ -100,7 +100,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       preserveSilence: true,
       similarityThreshold: 0.4,
       preserveCriticalVisemes: true,
-      criticalVisemeMinDuration: 80,
     },
   });
 
