@@ -94,7 +94,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: () => {},
     onDebug: () => {},
-    clientTools: clientToolsRef.current,
   });
 
   const [lipSyncConfig] = useState({
