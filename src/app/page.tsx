@@ -79,6 +79,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   });
 
   const conversation = useConversation({
+    clientTools: clientToolsRef.current,
     micMuted: isMuted,
     onConnect: () => { setIsConnecting(false); },
     onDisconnect: () => {
