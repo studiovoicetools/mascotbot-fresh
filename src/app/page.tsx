@@ -48,6 +48,42 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
 
   const API_URL = process.env.NEXT_PUBLIC_BRAIN_API_URL || 'https://efro-brain-api.onrender.com';
 
+  // Stable refs to avoid re-creating clientTools on every render
+  const shopDomainRef = useRef(shopDomain);
+  const API_URL_Ref = useRef(API_URL);
+  const setMessagesRef = useRef(setMessages);
+  useEffect(() => { shopDomainRef.current = shopDomain; }, [shopDomain]);
+  useEffect(() => { setMessagesRef.current = setMessages; }, []);
+
+  const clientToolsRef = useRef({
+    brain_query: async ({ message }: { message: string }) => {
+      const cleanMessage = message.replace(/[.!?]+$/, '').trim();
+      console.log("🔥 brain_query CALLED with:", cleanMessage);
+      try {
+        const response = await fetch(`${API_URL_Ref.current}/api/brain/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: cleanMessage, shopDomain: shopDomainRef.current }),
+        });
+        const data = await response.json();
+        if (data.replyText) {
+          setTimeout(() => {
+            setMessagesRef.current(prev => [...prev, {
+              text: data.replyText,
+              sender: "bot" as const,
+              products: data.products?.slice(0, 3),
+            }]);
+          }, 100);
+        }
+        console.log("✅ brain_query RESULT:", data.replyText);
+        return data.replyText || "Ich konnte keine Informationen finden.";
+      } catch (error) {
+        console.error("❌ brain_query ERROR:", error);
+        return "Entschuldigung, es gab einen Fehler.";
+      }
+    },
+  });
+
   const conversation = useConversation({
     micMuted: isMuted,
     onConnect: () => { setIsConnecting(false); },
@@ -58,37 +94,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: () => {},
     onDebug: () => {},
-    clientTools: {
-      brain_query: async ({ message }: { message: string }) => {
-        // Punkt am Ende entfernen (ElevenLabs Transkription hat immer Punkt)
-        const cleanMessage = message.replace(/[.!?]+$/, '').trim();
-        console.log("🔥 brain_query CALLED with:", cleanMessage, "shopDomain:", shopDomain);
-        try {
-          const response = await fetch(`${API_URL}/api/brain/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: cleanMessage, shopDomain }),
-          });
-          const data = await response.json();
-          // Produkte im Chat anzeigen - NACH Audio mit setTimeout
-          if (data.replyText) {
-            setTimeout(() => {
-              setMessages(prev => [...prev, {
-                text: data.replyText,
-                sender: "bot",
-                products: data.products?.slice(0, 3),
-              }]);
-            }, 0);
-          }
-          console.log("✅ brain_query RESULT:", data.replyText, "products:", data.products?.length);
-          return data.replyText || "Ich konnte keine Informationen finden.";
-        } catch (error) {
-          console.error("Brain query error:", error);
-          console.error("❌ brain_query FETCH ERROR:", error);
-          return "Entschuldigung, es gab einen Fehler.";
-        }
-      },
-    },
+    clientTools: clientToolsRef.current,
   });
 
   const [lipSyncConfig] = useState({
