@@ -89,18 +89,20 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     },
   });
 
+  const [lipSyncConfig] = useState({
+    minVisemeInterval: 40,
+    mergeWindow: 60,
+    keyVisemePreference: 0.6,
+    preserveSilence: true,
+    similarityThreshold: 0.4,
+    preserveCriticalVisemes: true,
+  });
+
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
     conversation,
     gesture: true,
     naturalLipSync: true,
-    naturalLipSyncConfig: {
-      minVisemeInterval: 40,
-      mergeWindow: 60,
-      keyVisemePreference: 0.6,
-      preserveSilence: true,
-      similarityThreshold: 0.4,
-      preserveCriticalVisemes: true,
-    },
+    naturalLipSyncConfig: lipSyncConfig,
   });
 
   const getSignedUrl = async (): Promise<string> => {
