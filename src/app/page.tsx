@@ -56,31 +56,25 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   useEffect(() => { setMessagesRef.current = setMessages; }, []);
 
   const clientToolsRef = useRef({
-    brain_query: async ({ message }: { message: string }) => {
+    brain_query: ({ message }: { message: string }) => {
       const cleanMessage = message.replace(/[.!?]+$/, '').trim();
       console.log("🔥 brain_query CALLED with:", cleanMessage);
-      try {
-        const response = await fetch(`${API_URL_Ref.current}/api/brain/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: cleanMessage, shopDomain: shopDomainRef.current }),
-        });
-        const data = await response.json();
+      // Fire and forget - kein await = kein Re-render blocking
+      fetch(`${API_URL_Ref.current}/api/brain/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: cleanMessage, shopDomain: shopDomainRef.current }),
+      }).then(r => r.json()).then(data => {
         if (data.replyText) {
-          setTimeout(() => {
-            setMessagesRef.current(prev => [...prev, {
-              text: data.replyText,
-              sender: "bot" as const,
-              products: data.products?.slice(0, 3),
-            }]);
-          }, 100);
+          setMessagesRef.current(prev => [...prev, {
+            text: data.replyText,
+            sender: "bot" as const,
+            products: data.products?.slice(0, 3),
+          }]);
         }
-        console.log("✅ brain_query RESULT:", data.replyText);
-        return data.replyText || "Ich konnte keine Informationen finden.";
-      } catch (error) {
-        console.error("❌ brain_query ERROR:", error);
-        return "Entschuldigung, es gab einen Fehler.";
-      }
+      }).catch(err => console.error("❌ brain_query ERROR:", err));
+      // Sofort leeren String zurückgeben - ElevenLabs spricht selbst
+      return "";
     },
   });
 
