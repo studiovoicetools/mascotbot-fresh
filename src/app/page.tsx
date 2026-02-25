@@ -70,13 +70,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
             body: JSON.stringify({ message: cleanMessage, shopDomain }),
           });
           const data = await response.json();
-          // Produkte auch im Chat anzeigen
+          // Produkte im Chat anzeigen - NACH Audio mit setTimeout
           if (data.replyText) {
-            setMessages(prev => [...prev, {
-              text: data.replyText,
-              sender: "bot",
-              products: data.products?.slice(0, 3),
-            }]);
+            setTimeout(() => {
+              setMessages(prev => [...prev, {
+                text: data.replyText,
+                sender: "bot",
+                products: data.products?.slice(0, 3),
+              }]);
+            }, 0);
           }
           console.log("✅ brain_query RESULT:", data.replyText, "products:", data.products?.length);
           return data.replyText || "Ich konnte keine Informationen finden.";
