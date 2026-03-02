@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
 const BRAIN_API_URL =
-  process.env.BRAIN_API_URL || "https://efro-brain-api.onrender.com";
+  process.env.BRAIN_API_URL || "https://efro-five.vercel.app";
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +21,7 @@ export async function POST(request: NextRequest) {
     const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, shopDomain }),
+      body: JSON.stringify({ message, shop_domain: shopDomain }),
     });
 
     if (!brainResponse.ok) {
@@ -35,19 +30,37 @@ export async function POST(request: NextRequest) {
 
     const brainData = await brainResponse.json();
     const replyText: string = brainData.replyText || brainData.response || "";
-    const products = brainData.products?.slice(0, 3) || [];
+    // Normalize product fields to match the frontend Product interface.
+    // Brain API returns price as number and image as image_url/imageUrl.
+    const products = (brainData.products || []).slice(0, 3).map((p: any) => ({
+      title: p.title || "",
+      price: p.price != null ? String(p.price) : "0",
+      image: p.image_url || p.imageUrl || p.image || undefined,
+      url: p.url || undefined,
+      handle: p.handle || p.shopify_handle || undefined,
+    }));
 
-    // 2. Audio-Cache in Supabase prüfen
     const textHash = crypto
       .createHash("md5")
       .update(`${shopDomain}:${replyText}`)
       .digest("hex");
 
-    const { data: cachedAudio } = await supabase
-      .from("audio_cache")
-      .select("audio_data, viseme_data")
-      .eq("text_hash", textHash)
-      .single();
+    // 2. Audio-Cache in Supabase prüfen (optional, nur wenn konfiguriert)
+    let cachedAudio = null;
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+      const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+      );
+
+      const { data } = await supabase
+        .from("audio_cache")
+        .select("audio_data, viseme_data")
+        .eq("text_hash", textHash)
+        .single();
+
+      cachedAudio = data || null;
+    }
 
     return NextResponse.json({
       success: true,
@@ -55,7 +68,7 @@ export async function POST(request: NextRequest) {
       products,
       textHash,
       cached: !!cachedAudio,
-      audioData: cachedAudio || null,
+      audioData: cachedAudio,
     });
   } catch (error) {
     console.error("brain-chat error:", error);

@@ -1,35 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
 const BRAIN_API_URL =
-  process.env.BRAIN_API_URL || "https://efro-brain-api.onrender.com";
+  process.env.BRAIN_API_URL || "https://efro-five.vercel.app";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const shopDomain = searchParams.get("shopDomain") || "avatarsalespro-dev.myshopify.com";
 
   try {
-    // 1. Supabase Cache prüfen
-    const { data: cached } = await supabase
-      .from("cache_responses")
-      .select("reply_text, hit_count, id")
-      .eq("question_hash", "greeting")
-      .eq("shop_id", "b4cbd96d-b0f1-4a39-9021-b276a4302a76")
-      .single();
+    // 1. Supabase Cache prüfen (optional, nur wenn konfiguriert)
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+      const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+      );
 
-    if (cached?.reply_text) {
-      // hit_count erhöhen
-      await supabase
+      const { data: cached } = await supabase
         .from("cache_responses")
-        .update({ hit_count: cached.hit_count + 1, last_used_at: new Date().toISOString() })
-        .eq("id", cached.id);
+        .select("reply_text, hit_count, id")
+        .eq("question_hash", "greeting")
+        .eq("shop_id", "b4cbd96d-b0f1-4a39-9021-b276a4302a76")
+        .single();
 
-      return NextResponse.json({ success: true, replyText: cached.reply_text, source: "cache" });
+      if (cached?.reply_text) {
+        await supabase
+          .from("cache_responses")
+          .update({ hit_count: cached.hit_count + 1, last_used_at: new Date().toISOString() })
+          .eq("id", cached.id);
+
+        return NextResponse.json({ success: true, replyText: cached.reply_text, source: "cache" });
+      }
     }
 
     // 2. Fallback: Brain API
