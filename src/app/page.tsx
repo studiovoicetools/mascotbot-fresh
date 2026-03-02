@@ -60,7 +60,14 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       setIsConnecting(false);
     },
     onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
-    onMessage: () => {},
+    onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
+      if (msg.message) {
+        setMessages(prev => [...prev, {
+          text: msg.message,
+          sender: msg.source === 'user' ? 'user' : 'bot',
+        }]);
+      }
+    },
     onDebug: () => {},
   });
 
@@ -71,6 +78,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     preserveSilence: true,
     similarityThreshold: 0.4,
     preserveCriticalVisemes: true,
+    criticalVisemeMinDuration: 80,
   });
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, shopDomain }),
+      body: JSON.stringify({ message, shop_domain: shopDomain }),
     });
 
     if (!brainResponse.ok) {
@@ -30,7 +30,15 @@ export async function POST(request: NextRequest) {
 
     const brainData = await brainResponse.json();
     const replyText: string = brainData.replyText || brainData.response || "";
-    const products = brainData.products?.slice(0, 3) || [];
+    // Normalize product fields to match the frontend Product interface.
+    // Brain API returns price as number and image as image_url/imageUrl.
+    const products = (brainData.products || []).slice(0, 3).map((p: any) => ({
+      title: p.title || "",
+      price: p.price != null ? String(p.price) : "0",
+      image: p.image_url || p.imageUrl || p.image || undefined,
+      url: p.url || undefined,
+      handle: p.handle || p.shopify_handle || undefined,
+    }));
 
     const textHash = crypto
       .createHash("md5")
