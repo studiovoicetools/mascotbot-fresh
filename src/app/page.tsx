@@ -33,6 +33,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+  const [viaProxy, setViaProxy] = useState<boolean | null>(null);
   const manualDisconnect = useRef<boolean>(false);
   const urlRefreshInterval = useRef<NodeJS.Timeout | null>(null);
   const connectionStartTime = useRef<number | null>(null);
@@ -63,14 +64,9 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       setIsConnecting(false);
     },
     onError: (error: any) => { console.error("[LipSync] ElevenLabs Error:", error); setIsConnecting(false); },
+    // Keep empty to prevent unnecessary re-renders during voice — transcripts come through text chat
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
-      console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 60));
-      if (msg.message) {
-        setMessages(prev => [...prev, {
-          text: msg.message,
-          sender: msg.source === 'user' ? 'user' : 'bot',
-        }]);
-      }
+      console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 80));
     },
     onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
   });
@@ -110,6 +106,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     });
     if (!response.ok) throw new Error(`Failed to get signed url: ${response.statusText}`);
     const data = await response.json();
+    // Expose whether URL routes through mascot.bot proxy
+    if (typeof data.viaProxy === 'boolean') setViaProxy(data.viaProxy);
     return data.signedUrl;
   };
 
@@ -170,7 +168,10 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       let signedUrl = cachedUrl;
       if (!signedUrl) signedUrl = await getSignedUrl();
       if (!signedUrl) throw new Error("Signed URL fehlt.");
-      console.log("[LipSync] Starting session – URL via mascot.bot:", signedUrl.includes("mascot.bot"), "| length:", signedUrl.length);
+      console.log("[LipSync] Starting session – URL via mascot.bot:", signedUrl.includes("mascot.bot"), "| viaProxy flag:", viaProxy, "| length:", signedUrl.length);
+      if (viaProxy === false) {
+        console.error("[LipSync] ❌ CRITICAL: signed URL does NOT route through mascot.bot – LipSync/visemes will NOT work! Check MASCOT_BOT_API_KEY env var.");
+      }
       await conversation.startSession({ signedUrl, dynamicVariables });
     } catch (error) {
       console.error("[LipSync] Failed to start conversation:", error);
@@ -203,6 +204,9 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
         </div>
         <div className="mt-1">LipSync: {isIntercepting ? "✓" : "○"}</div>
         <div className="mt-1">Audio: {messageCount.audio} | Viseme: {messageCount.viseme}</div>
+        <div className={`mt-1 font-bold ${viaProxy === false ? 'text-red-400' : viaProxy === true ? 'text-green-400' : 'text-gray-400'}`}>
+          Proxy: {viaProxy === null ? '…' : viaProxy ? '✓ mascot.bot' : '❌ DIRECT – no LipSync!'}
+        </div>
       </div>
 
       {/* ── RECHTE SPALTE: Avatar + Voice Button + Chat ── */}

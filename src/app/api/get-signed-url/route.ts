@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         },
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {
@@ -43,17 +44,18 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     const signedUrl: string = data.signed_url || "";
+    const viaProxy: boolean = signedUrl.includes("mascot.bot");
     // Log URL metadata only (never the actual URL for security)
     console.log("[LipSync][get-signed-url] ✅ signed_url received, length:", signedUrl.length);
     console.log("[LipSync][get-signed-url] URL starts with wss://:", signedUrl.startsWith("wss://"));
-    console.log("[LipSync][get-signed-url] URL via mascot.bot proxy:", signedUrl.includes("mascot.bot"));
+    console.log("[LipSync][get-signed-url] URL via mascot.bot proxy:", viaProxy);
 
     if (!signedUrl) {
       console.error("[LipSync][get-signed-url] ❌ mascot.bot returned no signed_url!");
       throw new Error("mascot.bot returned no signed_url");
     }
 
-    return NextResponse.json({ signedUrl });
+    return NextResponse.json({ signedUrl, viaProxy });
   } catch (error) {
     console.error("[LipSync][get-signed-url] ❌ Error:", error);
     return NextResponse.json(
