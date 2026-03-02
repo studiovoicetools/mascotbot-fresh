@@ -54,13 +54,17 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
 
   const conversation = useConversation({
     micMuted: isMuted,
-    onConnect: () => { setIsConnecting(false); },
-    onDisconnect: () => {
-      console.log("ElevenLabs Disconnected");
+    onConnect: () => {
+      console.log("[LipSync] ✅ ElevenLabs connected");
       setIsConnecting(false);
     },
-    onError: (error: any) => { console.error("ElevenLabs Error:", error); setIsConnecting(false); },
+    onDisconnect: () => {
+      console.log("[LipSync] ElevenLabs disconnected");
+      setIsConnecting(false);
+    },
+    onError: (error: any) => { console.error("[LipSync] ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
+      console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 60));
       if (msg.message) {
         setMessages(prev => [...prev, {
           text: msg.message,
@@ -68,7 +72,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
         }]);
       }
     },
-    onDebug: () => {},
+    onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
   });
 
   const [lipSyncConfig] = useState({
@@ -86,7 +90,16 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     gesture: true,
     naturalLipSync: true,
     naturalLipSyncConfig: lipSyncConfig,
+    debug: true,
+    onVisemeReceived: (visemes) => {
+      console.log("[LipSync] ✅ Visemes received:", visemes.length, "first:", visemes[0]);
+    },
   });
+
+  // Log LipSync state changes for debugging
+  useEffect(() => {
+    console.log("[LipSync] isIntercepting:", isIntercepting, "| messageCount:", JSON.stringify(messageCount));
+  }, [isIntercepting, messageCount]);
 
   const getSignedUrl = async (): Promise<string> => {
     const response = await fetch(`/api/get-signed-url`, {
@@ -146,7 +159,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
 
   const startConversation = useCallback(async () => {
     if (isStartingRef.current || conversation.status === "connected" || conversation.status === "connecting") {
-      console.log("startConversation blocked - already starting or connected");
+      console.log("[LipSync] startConversation blocked - status:", conversation.status);
       return;
     }
     try {
@@ -157,9 +170,10 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       let signedUrl = cachedUrl;
       if (!signedUrl) signedUrl = await getSignedUrl();
       if (!signedUrl) throw new Error("Signed URL fehlt.");
+      console.log("[LipSync] Starting session – URL via mascot.bot:", signedUrl.includes("mascot.bot"), "| length:", signedUrl.length);
       await conversation.startSession({ signedUrl, dynamicVariables });
     } catch (error) {
-      console.error("Failed to start conversation:", error);
+      console.error("[LipSync] Failed to start conversation:", error);
       setIsConnecting(false);
     } finally {
       isStartingRef.current = false;
@@ -188,6 +202,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           <span>{conversation.status === 'connected' ? 'Voice ON' : 'Voice OFF'}</span>
         </div>
         <div className="mt-1">LipSync: {isIntercepting ? "✓" : "○"}</div>
+        <div className="mt-1">Audio: {messageCount.audio} | Viseme: {messageCount.viseme}</div>
       </div>
 
       {/* ── RECHTE SPALTE: Avatar + Voice Button + Chat ── */}
