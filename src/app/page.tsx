@@ -46,11 +46,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     ? new URLSearchParams(window.location.search).get('shop') || 'avatarsalespro-dev.myshopify.com'
     : 'avatarsalespro-dev.myshopify.com';
 
-  const API_URL = process.env.NEXT_PUBLIC_BRAIN_API_URL || 'https://efro-brain-api.onrender.com';
-
   // Stable refs to avoid re-creating clientTools on every render
   const shopDomainRef = useRef(shopDomain);
-  const API_URL_Ref = useRef(API_URL);
   const setMessagesRef = useRef(setMessages);
   useEffect(() => { shopDomainRef.current = shopDomain; }, [shopDomain]);
   useEffect(() => { setMessagesRef.current = setMessages; }, []);
@@ -121,7 +118,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     setMessages(prev => [...prev, { text, sender: 'user' }]);
     setUserInput("");
     try {
-      const response = await fetch(`${API_URL}/api/brain/chat`, {
+      const response = await fetch(`/api/brain-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, shopDomain })
