@@ -64,21 +64,49 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       setIsConnecting(false);
     },
     onError: (error: any) => { console.error("[LipSync] ElevenLabs Error:", error); setIsConnecting(false); },
-    // Keep empty to prevent unnecessary re-renders during voice — transcripts come through text chat
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
       console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 80));
+      if (msg.message && msg.message.trim()) {
+        setMessages(prev => [...prev, {
+          text: msg.message,
+          sender: msg.source === 'user' ? 'user' : 'bot',
+        }]);
+      }
     },
     onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
+    clientTools: {
+      search_products: async ({ query }: { query: string }) => {
+        setMessagesRef.current(prev => [...prev, { text: query, sender: 'user' }]);
+        try {
+          const response = await fetch('/api/brain-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: query, shopDomain: shopDomainRef.current, limit: 3 }),
+            signal: AbortSignal.timeout(8000),
+          });
+          const data = await response.json();
+          const products: Product[] = data.products || [];
+          setMessagesRef.current(prev => [...prev, {
+            text: `Ich habe ${products.length} Produkt(e) gefunden:`,
+            sender: 'bot',
+            products,
+          }]);
+          return JSON.stringify({ success: true, count: products.length });
+        } catch (error) {
+          return JSON.stringify({ success: false, error: String(error) });
+        }
+      },
+    },
   });
 
   const [lipSyncConfig] = useState({
-    minVisemeInterval: 40,
-    mergeWindow: 60,
+    minVisemeInterval: 30,
+    mergeWindow: 40,
     keyVisemePreference: 0.6,
     preserveSilence: true,
     similarityThreshold: 0.4,
     preserveCriticalVisemes: true,
-    criticalVisemeMinDuration: 80,
+    criticalVisemeMinDuration: 60,
   });
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
@@ -140,7 +168,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       const response = await fetch(`/api/brain-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, shopDomain })
+        body: JSON.stringify({ message: text, shopDomain, limit: 3 })
       });
       const data = await response.json();
       setMessages(prev => [...prev, {
@@ -357,7 +385,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                     <a
                       key={j}
                       href={product.url || `https://${shopDomain}/products/${product.handle || ''}`}
-                      target="_parent"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       style={{
                         display: "flex",
                         gap: "10px",

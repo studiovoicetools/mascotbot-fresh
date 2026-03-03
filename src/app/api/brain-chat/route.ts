@@ -8,7 +8,7 @@ const BRAIN_API_URL =
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, shopDomain } = body;
+    const { message, shopDomain, limit } = body;
 
     if (!message || !shopDomain) {
       return NextResponse.json(
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, shop_domain: shopDomain }),
+      body: JSON.stringify({ message, shop_domain: shopDomain, limit: limit || 3 }),
     });
 
     if (!brainResponse.ok) {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const replyText: string = brainData.replyText || brainData.response || "";
     // Normalize product fields to match the frontend Product interface.
     // Brain API returns price as number and image as image_url/imageUrl.
-    const products = (brainData.products || []).slice(0, 3).map((p: any) => ({
+    const products = (brainData.products || []).slice(0, limit || 3).map((p: any) => ({
       title: p.title || "",
       price: p.price != null ? String(p.price) : "0",
       image: p.image_url || p.imageUrl || p.image || undefined,
