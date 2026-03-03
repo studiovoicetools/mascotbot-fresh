@@ -141,10 +141,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
             products,
           }]);
           const ordinals = ['Erstes', 'Zweites', 'Drittes'];
-          const speechText = products.length === 0
-            ? "Leider habe ich keine passenden Produkte in unserem Shop gefunden. Kann ich dir bei etwas anderem helfen?"
-            : `Ich habe ${products.length} Produkt${products.length > 1 ? 'e' : ''} gefunden. ` +
-              products.map((p, i) => `${ordinals[i] || `${i + 1}.`} Produkt: ${cleanTitle(p.title)}, ${formatPriceForSpeech(p.price)}`).join('. ') + '.';
+          let speechText = '';
+          if (products.length === 0) {
+            speechText = 'Ich konnte leider keine passenden Produkte finden.';
+          } else if (products.length === 1) {
+            speechText = `Ich habe ein passendes Produkt gefunden: ${cleanTitle(products[0].title)} für ${formatPriceForSpeech(products[0].price)}.`;
+          } else {
+            const productList = products.map((p, i) => `${ordinals[i]}: ${cleanTitle(p.title)}, ${formatPriceForSpeech(p.price)}`).join('. ');
+            speechText = `Ich habe ${products.length} passende Produkte gefunden. ${productList}.`;
+          }
           return JSON.stringify({ success: true, count: products.length, speechText, products });
         } catch (error) {
           return JSON.stringify({ success: false, speechText: "Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal." });
@@ -225,20 +230,12 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
         body: JSON.stringify({ message: text, shopDomain, limit: 3 })
       });
       const data = await response.json();
-      const products: Product[] = data.products?.slice(0, 3) || [];
-
-      if (products.length > 0) {
-        setMessages(prev => [...prev, {
-          text: `Hier sind meine Top ${products.length} Empfehlungen für dich:`,
-          sender: 'bot',
-          products,
-        }]);
-      } else {
-        setMessages(prev => [...prev, {
-          text: data.replyText || data.reply || 'Ich konnte leider keine passenden Produkte finden.',
-          sender: 'bot',
-        }]);
-      }
+      const products: Product[] = (data.products || []).slice(0, 3);
+      setMessages(prev => [...prev, {
+        text: data.replyText || (products.length > 0 ? `Hier sind ${products.length} passende Produkte:` : 'Wie kann ich dir helfen?'),
+        sender: 'bot',
+        products,
+      }]);
     } catch (error) {
       setMessages(prev => [...prev, { text: 'Entschuldigung, es gab einen Fehler.', sender: 'bot' }]);
     }
@@ -288,13 +285,19 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     const wasActive = sessionStorage.getItem('efro_session_active') === 'true';
     const savedMessages = sessionStorage.getItem('efro_messages');
     if (savedMessages) {
-      try { setMessages(JSON.parse(savedMessages)); } catch (e) { console.warn('[EFRO] Failed to restore session messages:', e); }
+      try {
+        const parsed = JSON.parse(savedMessages);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      } catch (e) { console.warn('[EFRO] Failed to restore session messages:', e); }
     }
+    sessionStorage.removeItem('efro_session_active');
+    sessionStorage.removeItem('efro_messages');
     if (wasActive) {
       autoStartedRef.current = true;
-      sessionStorage.removeItem('efro_session_active');
-      sessionStorage.removeItem('efro_messages');
-      setTimeout(() => { startConversationRef.current(); }, AUTO_RESUME_DELAY_MS);
+      const timer = setTimeout(() => { startConversationRef.current(); }, 2000);
+      return () => clearTimeout(timer);
     }
   }, []);
 
