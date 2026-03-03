@@ -39,12 +39,30 @@ const formatPriceForSpeech = (price: string): string => {
     if (isNaN(num)) return price;
     const euros = Math.floor(num);
     const cents = Math.round((num - euros) * 100);
-    return cents > 0 ? `${euros} Euro ${cents}` : `${euros} Euro`;
+    if (cents > 0) {
+      return `${euros} Euro und ${cents} Cent`;
+    }
+    return `${euros} Euro`;
+  } catch { return price; }
+};
+
+const formatPriceForDisplay = (price: string): string => {
+  try {
+    if (price.includes('€') || (price.includes(',') && !price.includes('.'))) return price;
+    const cleaned = price.replace(/[€$£\s]/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    if (isNaN(num)) return price;
+    return num.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
   } catch { return price; }
 };
 
 const cleanTitleForSpeech = (title: string): string =>
-  title.replace(/[&<>'"]/g, ' ').replace(/\s+/g, ' ').trim();
+  title
+    .replace(/[\/\\|]/g, ' ')
+    .replace(/[-–—]/g, ' ')
+    .replace(/[&<>'"]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -54,7 +72,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const manualDisconnect = useRef<boolean>(false);
   const urlRefreshInterval = useRef<NodeJS.Timeout | null>(null);
   const connectionStartTime = useRef<number | null>(null);
-  const productQueryHandledRef = useRef<Set<string>>(new Set());
 
   // Load chat history from sessionStorage on mount
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -101,31 +118,19 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onDisconnect: () => {
       console.log("[LipSync] ElevenLabs disconnected");
       setIsConnecting(false);
+      manualDisconnect.current = false;
     },
     onError: (error: any) => { console.error("[LipSync] ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
       console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 80));
       if (!msg.message || !msg.message.trim()) return;
-      // Skip user voice messages — they are added via clientTools to avoid duplicates
       if (msg.source === 'user') return;
-      // Filter out AI product-summary messages when product cards were already shown
-      if (msg.source === 'ai') {
-        const isProductSummary = /\b(euro|€|\d+[,\\.]+\d{2}|produkt|empfehlung|angebot|gefunden|empfeh)\b/i.test(msg.message);
-        if (isProductSummary && productQueryHandledRef.current.size > 0) {
-          console.log("[LipSync] Skipping product summary text (already shown as cards)");
-          return;
-        }
-      }
-      setMessages(prev => [...prev, {
-        text: msg.message,
-        sender: 'bot',
-      }]);
+      setMessages(prev => [...prev, { text: msg.message, sender: 'bot' }]);
     },
     onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
     clientTools: {
       search_products: async ({ query }: { query: string }) => {
         setMessagesRef.current(prev => [...prev, { text: query, sender: 'user' }]);
-        productQueryHandledRef.current.add(query.toLowerCase().trim());
         try {
           const response = await fetch('/api/brain-chat', {
             method: 'POST',
@@ -149,7 +154,10 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
             const num = ['Erstes', 'Zweites', 'Drittes'][i] || `Produkt ${i + 1}`;
             return `${num}: ${cleanTitleForSpeech(p.title)}, ${formatPriceForSpeech(p.price)}`;
           }).join('. ');
-          return `Ich habe ${products.length} passende Produkte gefunden. ${productList}.`;
+          const intro = products.length === 1
+            ? `Ich habe ein passendes Produkt gefunden.`
+            : `Ich habe ${products.length} tolle Produkte für dich gefunden.`;
+          return `${intro} ${productList}. Soll ich dir eins genauer vorstellen?`;
         } catch (error) {
           return 'Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal.';
         }
@@ -288,17 +296,28 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     try {
       const wasActive = sessionStorage.getItem('efro_session_active') === 'true';
       const savedMessages = sessionStorage.getItem('efro_messages');
+      const lastProduct = sessionStorage.getItem('efro_last_product') || '';
       if (savedMessages) {
         const parsed = JSON.parse(savedMessages);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
+          if (lastProduct) {
+            const contextMsg: Message = {
+              text: `Du schaust dir gerade "${lastProduct}" an. Ich bin noch hier – hast du Fragen dazu?`,
+              sender: 'bot',
+            };
+            setMessages([...parsed, contextMsg]);
+          } else {
+            setMessages(parsed);
+          }
         }
       }
       sessionStorage.removeItem('efro_session_active');
       sessionStorage.removeItem('efro_messages');
+      sessionStorage.removeItem('efro_last_product');
+      sessionStorage.removeItem('efro_last_product_url');
       if (wasActive) {
         hasAutoStarted.current = true;
-        const timer = setTimeout(() => { startConversation(); }, 2000);
+        const timer = setTimeout(() => { startConversation(); }, AUTO_RESUME_DELAY_MS);
         return () => clearTimeout(timer);
       }
     } catch {}
@@ -475,11 +494,14 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                       href={product.url || `https://${shopDomain}/products/${product.handle || ''}`}
                       onClick={(e) => {
                         e.preventDefault();
+                        const targetUrl = product.url || `https://${shopDomain}/products/${product.handle || ''}`;
                         try {
                           sessionStorage.setItem('efro_session_active', 'true');
                           sessionStorage.setItem('efro_messages', JSON.stringify(messages));
+                          sessionStorage.setItem('efro_last_product', product.title || '');
+                          sessionStorage.setItem('efro_last_product_url', targetUrl);
                         } catch {}
-                        window.location.href = product.url || `https://${shopDomain}/products/${product.handle || ''}`;
+                        window.open(targetUrl, '_blank', 'noopener,noreferrer');
                       }}
                       style={{
                         display: "flex",
@@ -502,7 +524,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: "600", fontSize: "12px", color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.title}</div>
                         <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>⭐⭐⭐⭐⭐</div>
-                        <div style={{ fontWeight: "bold", fontSize: "15px", color: "#FF8A3D", marginTop: "2px" }}>{product.price}</div>
+                        <div style={{ fontWeight: "bold", fontSize: "15px", color: "#FF8A3D", marginTop: "2px" }}>{formatPriceForDisplay(product.price)}</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", color: "#FF8A3D", fontSize: "16px" }}>→</div>
                     </a>
