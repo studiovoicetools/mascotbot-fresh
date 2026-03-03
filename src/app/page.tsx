@@ -151,8 +151,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     similarityThreshold: 0.4,
     preserveCriticalVisemes: true,
     criticalVisemeMinDuration: 60,
-    tailCutoffMs: 80,
-    silencePadding: 50,
   });
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
@@ -163,9 +161,6 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     debug: true,
     onVisemeReceived: (visemes) => {
       console.log("[LipSync] ✅ Visemes received:", visemes.length, "first:", visemes[0]);
-    },
-    onSpeechEnd: () => {
-      console.log("[LipSync] 🔇 Speech ended – stopping mouth animation");
     },
   });
 
