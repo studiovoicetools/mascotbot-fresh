@@ -29,6 +29,8 @@ interface ElevenLabsAvatarProps {
   dynamicVariables?: Record<string, string | number | boolean>;
 }
 
+const SESSION_KEY = 'efro_chat_history';
+
 function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -37,9 +39,22 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const manualDisconnect = useRef<boolean>(false);
   const urlRefreshInterval = useRef<NodeJS.Timeout | null>(null);
   const connectionStartTime = useRef<number | null>(null);
-  const [messages, setMessages] = useState<Message[]>([
-    { text: "Hallo! 👋 Ich bin EFRO, dein KI-Verkäufer. Wie kann ich dir helfen?", sender: 'bot' }
-  ]);
+  const productQueryHandledRef = useRef<Set<string>>(new Set());
+
+  // Load chat history from sessionStorage on mount
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem(SESSION_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Message[];
+          if (parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return [{ text: "Hallo! 👋 Ich bin EFRO, dein KI-Verkäufer. Wie kann ich dir helfen?", sender: 'bot' }];
+  });
+
   const [userInput, setUserInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +67,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const setMessagesRef = useRef(setMessages);
   useEffect(() => { shopDomainRef.current = shopDomain; }, [shopDomain]);
   useEffect(() => { setMessagesRef.current = setMessages; }, []);
+
+  // Persist chat history to sessionStorage on every change
+  useEffect(() => {
+    if (typeof window !== 'undefined' && messages.length > 0) {
+      try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(messages));
+      } catch {}
+    }
+  }, [messages]);
 
   const conversation = useConversation({
     micMuted: isMuted,
@@ -66,17 +90,27 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onError: (error: any) => { console.error("[LipSync] ElevenLabs Error:", error); setIsConnecting(false); },
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
       console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 80));
-      if (msg.message && msg.message.trim()) {
-        setMessages(prev => [...prev, {
-          text: msg.message,
-          sender: msg.source === 'user' ? 'user' : 'bot',
-        }]);
+      if (!msg.message || !msg.message.trim()) return;
+      // Skip user voice messages — they are added via clientTools to avoid duplicates
+      if (msg.source === 'user') return;
+      // Filter out AI product-summary messages when product cards were already shown
+      if (msg.source === 'ai') {
+        const isProductSummary = /\b(euro|€|\d+[,\\.]+\d{2}|produkt|empfehlung|angebot|gefunden|empfeh)\b/i.test(msg.message);
+        if (isProductSummary && productQueryHandledRef.current.size > 0) {
+          console.log("[LipSync] Skipping product summary text (already shown as cards)");
+          return;
+        }
       }
+      setMessages(prev => [...prev, {
+        text: msg.message,
+        sender: 'bot',
+      }]);
     },
     onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
     clientTools: {
       search_products: async ({ query }: { query: string }) => {
         setMessagesRef.current(prev => [...prev, { text: query, sender: 'user' }]);
+        productQueryHandledRef.current.add(query.toLowerCase().trim());
         try {
           const response = await fetch('/api/brain-chat', {
             method: 'POST',
@@ -87,13 +121,23 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           const data = await response.json();
           const products: Product[] = data.products || [];
           setMessagesRef.current(prev => [...prev, {
-            text: `Ich habe ${products.length} Produkt(e) gefunden:`,
+            text: products.length > 0
+              ? `Hier sind meine Top ${products.length} Empfehlungen für dich:`
+              : 'Leider habe ich keine passenden Produkte gefunden.',
             sender: 'bot',
             products,
           }]);
-          return JSON.stringify({ success: true, count: products.length });
+          if (products.length === 0) {
+            return "Leider habe ich keine passenden Produkte in unserem Shop gefunden. Kann ich dir bei etwas anderem helfen?";
+          } else if (products.length === 1) {
+            const p = products[0];
+            return `Ich habe ein passendes Produkt für dich gefunden: ${p.title} für ${p.price}. Schau es dir gerne im Chat an!`;
+          } else {
+            const names = products.map(p => p.title).join(', ');
+            return `Ich habe ${products.length} tolle Produkte für dich gefunden: ${names}. Die Preise und Details siehst du gerade im Chat!`;
+          }
         } catch (error) {
-          return JSON.stringify({ success: false, error: String(error) });
+          return "Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal.";
         }
       },
     },
@@ -107,6 +151,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     similarityThreshold: 0.4,
     preserveCriticalVisemes: true,
     criticalVisemeMinDuration: 60,
+    tailCutoffMs: 80,
+    silencePadding: 50,
   });
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
@@ -117,6 +163,9 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     debug: true,
     onVisemeReceived: (visemes) => {
       console.log("[LipSync] ✅ Visemes received:", visemes.length, "first:", visemes[0]);
+    },
+    onSpeechEnd: () => {
+      console.log("[LipSync] 🔇 Speech ended – stopping mouth animation");
     },
   });
 
@@ -171,11 +220,20 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
         body: JSON.stringify({ message: text, shopDomain, limit: 3 })
       });
       const data = await response.json();
-      setMessages(prev => [...prev, {
-        text: data.replyText,
-        sender: 'bot',
-        products: data.products?.slice(0, 3)
-      }]);
+      const products: Product[] = data.products?.slice(0, 3) || [];
+
+      if (products.length > 0) {
+        setMessages(prev => [...prev, {
+          text: `Hier sind meine Top ${products.length} Empfehlungen für dich:`,
+          sender: 'bot',
+          products,
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          text: data.replyText || data.reply || 'Ich konnte leider keine passenden Produkte finden.',
+          sender: 'bot',
+        }]);
+      }
     } catch (error) {
       setMessages(prev => [...prev, { text: 'Entschuldigung, es gab einen Fehler.', sender: 'bot' }]);
     }
@@ -232,9 +290,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
         </div>
         <div className="mt-1">LipSync: {isIntercepting ? "✓" : "○"}</div>
         <div className="mt-1">Audio: {messageCount.audio} | Viseme: {messageCount.viseme}</div>
-        <div className={`mt-1 font-bold ${viaProxy === false ? 'text-red-400' : viaProxy === true ? 'text-green-400' : 'text-gray-400'}`}>
-          Proxy: {viaProxy === null ? '…' : viaProxy ? '✓ mascot.bot' : '❌ DIRECT – no LipSync!'}
-        </div>
+        <div className={`mt-1 font-bold ${viaProxy === false ? 'text-red-400' : viaProxy === true ? 'text-green-400' : 'text-gray-400'}`}>Proxy: {viaProxy === null ? '…' : viaProxy ? '✓ mascot.bot' : '❌ DIRECT – no LipSync!'}</div>
       </div>
 
       {/* ── RECHTE SPALTE: Avatar + Voice Button + Chat ── */}
