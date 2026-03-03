@@ -100,6 +100,9 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   useEffect(() => { shopDomainRef.current = shopDomain; }, [shopDomain]);
   useEffect(() => { setMessagesRef.current = setMessages; }, []);
 
+  // Tracks voice queries already handled by search_products clientTool to avoid duplicates
+  const productQueryHandledRef = useRef<Set<string>>(new Set());
+
   // Persist chat history to sessionStorage on every change
   useEffect(() => {
     if (typeof window !== 'undefined' && messages.length > 0) {
@@ -108,6 +111,34 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       } catch {}
     }
   }, [messages]);
+
+  // Shadow product search for voice user messages (when search_products clientTool is not triggered)
+  const triggerVoiceProductSearch = useCallback(async (query: string) => {
+    const trimmed = query.trim().toLowerCase();
+    if (productQueryHandledRef.current.has(trimmed)) return;
+    productQueryHandledRef.current.add(trimmed);
+    try {
+      const response = await fetch('/api/brain-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: query, shopDomain: shopDomainRef.current, limit: 5 }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await response.json();
+      const products: Product[] = (data.products || []).slice(0, 5);
+      if (products.length > 0) {
+        setMessagesRef.current(prev => [...prev, {
+          text: products.length === 1
+            ? `Hier ist das passende Produkt für dich:`
+            : `Hier sind ${products.length} passende Produkte für dich:`,
+          sender: 'bot',
+          products,
+        }]);
+      }
+    } catch {
+      // Silent fail — Voice answer already shown as text
+    }
+  }, []);
 
   const conversation = useConversation({
     micMuted: isMuted,
@@ -124,22 +155,30 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     onMessage: (msg: { message: string; source: 'user' | 'ai' }) => {
       console.log("[LipSync] onMessage:", msg.source, msg.message?.slice(0, 80));
       if (!msg.message || !msg.message.trim()) return;
-      if (msg.source === 'user') return;
+      if (msg.source === 'user') {
+        const trimmed = msg.message.trim().toLowerCase();
+        if (!productQueryHandledRef.current.has(trimmed)) {
+          setMessages(prev => [...prev, { text: msg.message, sender: 'user' }]);
+          triggerVoiceProductSearch(msg.message);
+        }
+        return;
+      }
       setMessages(prev => [...prev, { text: msg.message, sender: 'bot' }]);
     },
     onDebug: (msg: any) => { console.log("[LipSync][ElevenLabs Debug]", String(JSON.stringify(msg) ?? "").slice(0, 200)); },
     clientTools: {
       search_products: async ({ query }: { query: string }) => {
+        productQueryHandledRef.current.add(query.trim().toLowerCase());
         setMessagesRef.current(prev => [...prev, { text: query, sender: 'user' }]);
         try {
           const response = await fetch('/api/brain-chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: query, shopDomain: shopDomainRef.current, limit: 3 }),
+            body: JSON.stringify({ message: query, shopDomain: shopDomainRef.current, limit: 5 }),
             signal: AbortSignal.timeout(8000),
           });
           const data = await response.json();
-          const products: Product[] = (data.products || []).slice(0, 3);
+          const products: Product[] = (data.products || []).slice(0, 5);
           setMessagesRef.current(prev => [...prev, {
             text: products.length > 0
               ? `Hier sind ${products.length} passende Produkte für dich:`
@@ -234,10 +273,10 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       const response = await fetch('/api/brain-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, shopDomain, limit: 3 }),
+        body: JSON.stringify({ message: text, shopDomain, limit: 5 }),
       });
       const data = await response.json();
-      const products: Product[] = (data.products || []).slice(0, 3);
+      const products: Product[] = (data.products || []).slice(0, 5);
       if (products.length > 0) {
         setMessages(prev => [...prev, {
           text: `Hier sind ${products.length} passende Produkte für dich:`,
@@ -492,16 +531,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                     <a
                       key={j}
                       href={product.url || `https://${shopDomain}/products/${product.handle || ''}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const targetUrl = product.url || `https://${shopDomain}/products/${product.handle || ''}`;
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
                         try {
                           sessionStorage.setItem('efro_session_active', 'true');
                           sessionStorage.setItem('efro_messages', JSON.stringify(messages));
                           sessionStorage.setItem('efro_last_product', product.title || '');
-                          sessionStorage.setItem('efro_last_product_url', targetUrl);
+                          sessionStorage.setItem('efro_last_product_url', product.url || `https://${shopDomain}/products/${product.handle || ''}`);
                         } catch {}
-                        window.open(targetUrl, '_blank', 'noopener,noreferrer');
                       }}
                       style={{
                         display: "flex",
