@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const BRAIN_API_URL =
-  process.env.BRAIN_API_URL || "https://efro-five.vercel.app";
+import { BRAIN_API_URL, pingBrainApi } from "@/lib/brainApi";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -34,14 +32,21 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Fallback: Brain API
-    const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "begrüße den kunden", shopDomain }),
-    });
+    await pingBrainApi();
 
-    const brainData = await brainResponse.json();
-    const replyText = brainData.replyText || brainData.response || "Hallo! Wie kann ich dir helfen?";
+    let replyText = "Hallo! 👋 Ich bin EFRO, dein KI-Verkäufer. Wie kann ich dir helfen?";
+    try {
+      const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "begrüße den kunden", shopDomain }),
+      });
+
+      const brainData = await brainResponse.json();
+      replyText = brainData.replyText || brainData.response || replyText;
+    } catch {
+      // Brain API unreachable — use fallback greeting
+    }
 
     return NextResponse.json({ success: true, replyText, source: "brain" });
 
