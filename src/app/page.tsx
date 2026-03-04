@@ -78,6 +78,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   ]);
 
   const [userInput, setUserInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [cartState, setCartState] = useState<Record<string, 'loading' | 'success' | 'error'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const shopDomain = typeof window !== 'undefined'
@@ -90,8 +92,10 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   // Stable refs to avoid re-creating clientTools on every render
   const shopDomainRef = useRef(shopDomain);
   const setMessagesRef = useRef(setMessages);
+  const setIsTypingRef = useRef(setIsTyping);
   useEffect(() => { shopDomainRef.current = shopDomain; }, [shopDomain]);
   useEffect(() => { setMessagesRef.current = setMessages; }, []);
+  useEffect(() => { setIsTypingRef.current = setIsTyping; }, []);
 
   // Tracks voice queries already handled by search_products clientTool to avoid duplicates
   const productQueryHandledRef = useRef<Set<string>>(new Set());
@@ -176,6 +180,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       search_products: async ({ query }: { query: string }) => {
         productQueryHandledRef.current.add(query.trim().toLowerCase());
         setMessagesRef.current(prev => [...prev, { text: query, sender: 'user' }]);
+        setIsTypingRef.current(true);
         try {
           const response = await fetch('/api/brain-chat', {
             method: 'POST',
@@ -198,6 +203,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           return `Ich habe das perfekte Produkt gefunden: ${cleanTitleForSpeech(products[0].title)}, ${formatPriceForSpeech(products[0].price)}.`;
         } catch (error) {
           return 'Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal.';
+        } finally {
+          setIsTypingRef.current(false);
         }
       },
     },
@@ -268,6 +275,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
     if (!text.trim()) return;
     setMessages(prev => [...prev, { text, sender: 'user' }]);
     setUserInput('');
+    setIsTyping(true);
     try {
       const response = await fetch('/api/brain-chat', {
         method: 'POST',
@@ -292,6 +300,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       }
     } catch (error) {
       setMessages(prev => [...prev, { text: 'Entschuldigung, es gab einen Fehler.', sender: 'bot' }]);
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -530,6 +540,67 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                         <div style={{ fontWeight: "600", fontSize: "12px", color: "#333", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.title}</div>
                         <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>⭐⭐⭐⭐⭐</div>
                         <div style={{ fontWeight: "bold", fontSize: "15px", color: "#FF8A3D", marginTop: "2px" }}>{formatPriceForDisplay(product.price)}</div>
+                        <button
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const key = `${i}_${j}`;
+                            setCartState(prev => ({ ...prev, [key]: 'loading' }));
+                            const handle = product.handle || '';
+                            window.parent.postMessage({ type: 'EFRO_ADD_TO_CART', handle, title: product.title }, '*');
+                            let resolved = false;
+                            const expectedOrigin = `https://${shopDomain}`;
+                            const onMessage = (event: MessageEvent) => {
+                              if (
+                                (event.origin === expectedOrigin || event.origin === window.location.origin) &&
+                                event.data?.type === 'EFRO_ADD_TO_CART_SUCCESS' &&
+                                event.data?.handle === handle
+                              ) {
+                                resolved = true;
+                                window.removeEventListener('message', onMessage);
+                                setCartState(prev => ({ ...prev, [key]: 'success' }));
+                                setTimeout(() => setCartState(prev => { const next = { ...prev }; delete next[key]; return next; }), 2000);
+                              }
+                            };
+                            window.addEventListener('message', onMessage);
+                            await new Promise(r => setTimeout(r, 1500));
+                            window.removeEventListener('message', onMessage);
+                            if (!resolved) {
+                              try {
+                                const res = await fetch('/api/add-to-cart', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ handle, shopDomain }),
+                                });
+                                if (res.ok) {
+                                  setCartState(prev => ({ ...prev, [key]: 'success' }));
+                                  setTimeout(() => setCartState(prev => { const next = { ...prev }; delete next[key]; return next; }), 2000);
+                                } else {
+                                  setCartState(prev => ({ ...prev, [key]: 'error' }));
+                                  setTimeout(() => setCartState(prev => { const next = { ...prev }; delete next[key]; return next; }), 2000);
+                                }
+                              } catch {
+                                setCartState(prev => ({ ...prev, [key]: 'error' }));
+                                setTimeout(() => setCartState(prev => { const next = { ...prev }; delete next[key]; return next; }), 2000);
+                              }
+                            }
+                          }}
+                          disabled={cartState[`${i}_${j}`] === 'loading'}
+                          style={{
+                            backgroundColor: cartState[`${i}_${j}`] === 'success' ? '#22c55e' : cartState[`${i}_${j}`] === 'error' ? '#ef4444' : '#FF8A3D',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '6px 12px',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: cartState[`${i}_${j}`] === 'loading' ? 'not-allowed' : 'pointer',
+                            width: '100%',
+                            marginTop: '6px',
+                          }}
+                        >
+                          {cartState[`${i}_${j}`] === 'loading' ? '⏳' : cartState[`${i}_${j}`] === 'success' ? '✅ Hinzugefügt!' : cartState[`${i}_${j}`] === 'error' ? '❌ Fehler' : 'In den Warenkorb'}
+                        </button>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", color: "#FF8A3D", fontSize: "16px" }}>→</div>
                     </a>
@@ -538,6 +609,20 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
               )}
             </div>
           ))}
+          {isTyping && (
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <div style={{
+                padding: "10px 14px",
+                borderRadius: "18px 18px 18px 4px",
+                backgroundColor: "#FFFFFF",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+                fontSize: "13px",
+                color: "#888",
+              }}>
+                EFRO tippt…
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
@@ -558,7 +643,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendMessage(userInput)}
-            placeholder="Frag mich nach Produkten..."
+            placeholder={conversation.isSpeaking ? "Avatar spricht…" : "Frag mich nach Produkten..."}
+            disabled={conversation.isSpeaking}
             style={{
               flex: 1,
               padding: "10px 16px",
@@ -568,10 +654,12 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
               fontSize: "13px",
               backgroundColor: "#FFF8F0",
               color: "#333",
+              opacity: conversation.isSpeaking ? 0.5 : 1,
             }}
           />
           <button
             onClick={() => sendMessage(userInput)}
+            disabled={conversation.isSpeaking || isTyping}
             style={{
               width: "42px",
               height: "42px",
