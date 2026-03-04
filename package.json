@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@elevenlabs/react": "^0.5.0",
-    "@mascotbot-sdk/react": "file:./mascotbot-sdk-react-0.1.6.tgz",
+    "@mascotbot-sdk/react": "file:./mascotbot-sdk-react-0.1.7.tgz",
     "@supabase/supabase-js": "^2.97.0",
     "next": "14.2.5",
     "react": "^18.2.0",

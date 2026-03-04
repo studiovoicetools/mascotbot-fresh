@@ -182,7 +182,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           const products: Product[] = (data.products || []).slice(0, 1);
           setMessagesRef.current(prev => [...prev, {
             text: products.length > 0
-              ? `Hier ist das passende Produkt für dich:`
+              ? `Meine Top-Empfehlung für dich:`
               : 'Leider habe ich keine passenden Produkte gefunden.',
             sender: 'bot',
             products,
@@ -190,10 +190,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           if (products.length === 0) {
             return 'Leider habe ich keine passenden Produkte gefunden. Kann ich dir bei etwas anderem helfen?';
           }
-          const productList = products.map((p) => {
-            return `${cleanTitleForSpeech(p.title)}, ${formatPriceForSpeech(p.price)}`;
-          }).join('. ');
-          return `Ich habe ein passendes Produkt gefunden. ${productList}. Soll ich dir mehr dazu sagen?`;
+          return `Ich habe das perfekte Produkt gefunden: ${cleanTitleForSpeech(products[0].title)}, ${formatPriceForSpeech(products[0].price)}.`;
         } catch (error) {
           return 'Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal.';
         }
@@ -202,12 +199,13 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   });
 
   const [lipSyncConfig] = useState({
-    minVisemeInterval: 50,
-    mergeWindow: 60,
-    keyVisemePreference: 0.7,
+    minVisemeInterval: 80,
+    mergeWindow: 100,
+    keyVisemePreference: 0.8,
     preserveSilence: true,
-    similarityThreshold: 0.5,
+    similarityThreshold: 0.6,
     preserveCriticalVisemes: true,
+    // criticalVisemeMinDuration removed — does not exist in SDK 0.1.7 type
   });
 
   const { isIntercepting, messageCount, lastMessage } = useMascotElevenlabs({
@@ -269,13 +267,15 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       const response = await fetch('/api/brain-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, shopDomain, limit: 1 }),
+        body: JSON.stringify({ message: text, shopDomain, limit: 3 }),
       });
       const data = await response.json();
-      const products: Product[] = (data.products || []).slice(0, 1);
+      const products: Product[] = (data.products || []).slice(0, 3);
       if (products.length > 0) {
         setMessages(prev => [...prev, {
-          text: `Hier ist das passende Produkt für dich:`,
+          text: products.length === 1
+            ? `Das perfekte Produkt für dich:`
+            : `Hier sind ${products.length} passende Produkte für dich:`,
           sender: 'bot',
           products,
         }]);
@@ -489,19 +489,19 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
               {msg.products && msg.products.length > 0 && (
                 <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
                   {msg.products.map((product, j) => (
-                    <div
+                    <a
                       key={j}
-                      role="button"
-                      tabIndex={0}
+                      href={product.url || `https://${shopDomain}/products/${product.handle || ''}`}
+                      target="_top"
+                      rel="noopener noreferrer"
                       onClick={() => {
-                        const url = product.url || `https://${shopDomain}/products/${product.handle || ''}`;
-                        window.parent.postMessage({ type: 'EFRO_NAVIGATE', url }, '*');
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          const url = product.url || `https://${shopDomain}/products/${product.handle || ''}`;
-                          window.parent.postMessage({ type: 'EFRO_NAVIGATE', url }, '*');
+                        try {
+                          sessionStorage.setItem('efro_session_active', 'true');
+                          sessionStorage.setItem('efro_messages', JSON.stringify(messages));
+                        } catch (e) {
+                          console.log('[EFRO] sessionStorage unavailable:', e);
                         }
+                        // No preventDefault, no window.location — browser follows the link normally
                       }}
                       style={{
                         display: "flex",
@@ -527,7 +527,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                         <div style={{ fontWeight: "bold", fontSize: "15px", color: "#FF8A3D", marginTop: "2px" }}>{formatPriceForDisplay(product.price)}</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", color: "#FF8A3D", fontSize: "16px" }}>→</div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               )}
