@@ -549,8 +549,13 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
                             const handle = product.handle || '';
                             window.parent.postMessage({ type: 'EFRO_ADD_TO_CART', handle, title: product.title }, '*');
                             let resolved = false;
+                            const expectedOrigin = `https://${shopDomain}`;
                             const onMessage = (event: MessageEvent) => {
-                              if (event.data?.type === 'EFRO_ADD_TO_CART_SUCCESS' && event.data?.handle === handle) {
+                              if (
+                                (event.origin === expectedOrigin || event.origin === window.location.origin) &&
+                                event.data?.type === 'EFRO_ADD_TO_CART_SUCCESS' &&
+                                event.data?.handle === handle
+                              ) {
                                 resolved = true;
                                 window.removeEventListener('message', onMessage);
                                 setCartState(prev => ({ ...prev, [key]: 'success' }));
