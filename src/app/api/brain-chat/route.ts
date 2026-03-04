@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-
-const BRAIN_API_URL =
-  process.env.BRAIN_API_URL || "https://efro-five.vercel.app";
+import { BRAIN_API_URL, pingBrainApi } from "@/lib/brainApi";
 
 // Maximale Anzahl an Nachrichten die als Kontext mitgeschickt werden
 const MAX_CONTEXT_MESSAGES = 6;
@@ -50,6 +48,10 @@ export async function POST(request: NextRequest) {
         console.warn("brain-chat: could not load conversation history:", err);
       }
     }
+
+    // Warm-up ping: weckt die Brain API falls sie kalt ist (Vercel cold-start)
+    // Fehler werden still geschluckt – für den User unsichtbar
+    await pingBrainApi();
 
     // 2. Brain API aufrufen (mit Kontext im history-Feld falls vorhanden)
     const brainResponse = await fetch(`${BRAIN_API_URL}/api/brain/chat`, {
@@ -127,8 +129,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("brain-chat error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      {
+        success: false,
+        replyText: "Entschuldigung, ich bin gerade nicht erreichbar. Bitte versuche es in einem Moment nochmal.",
+        products: [],
+        error: "service_unavailable",
+      },
+      { status: 200 } // status 200 so the frontend doesn't show an error state
     );
   }
 }
