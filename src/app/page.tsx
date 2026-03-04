@@ -11,6 +11,8 @@ import {
   useMascotElevenlabs,
 } from "@mascotbot-sdk/react";
 
+import { generateSessionId } from "@/lib/utils/sessionId";
+
 interface Message {
   text: string;
   sender: 'user' | 'bot';
@@ -81,6 +83,9 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
   const shopDomain = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('shop') || 'avatarsalespro-dev.myshopify.com'
     : 'avatarsalespro-dev.myshopify.com';
+
+  // Session-ID für Konversations-Gedächtnis (einmalig pro Browser-Session)
+  const sessionId = useRef<string>(generateSessionId());
 
   // Stable refs to avoid re-creating clientTools on every render
   const shopDomainRef = useRef(shopDomain);
@@ -267,7 +272,7 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
       const response = await fetch('/api/brain-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, shopDomain, limit: 3 }),
+        body: JSON.stringify({ message: text, shopDomain, limit: 3, sessionId: sessionId.current }),
       });
       const data = await response.json();
       const products: Product[] = (data.products || []).slice(0, 3);
