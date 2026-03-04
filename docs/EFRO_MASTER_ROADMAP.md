@@ -255,11 +255,12 @@ CREATE TABLE product_synonyms (
 ```
 Dann kann der Shop-Betreiber eigene Synonyme hinzufügen.
 
-### 🔴 Sprint 3 — Konversations-Gedächtnis (beide Repos)
-- Supabase `conversations` Tabelle erstellen (SQL Migration)
-- `session_id` in Frontend generieren und mitsenden
-- Brain API: History laden + an Orchestrator übergeben
-- GDPR: 24h TTL Policy
+### ✅ Sprint 3 — Konversations-Gedächtnis (studiovoicetools/mascotbot-fresh)
+- [x] conversations-Tabelle in Supabase (`supabase/migrations/20260304_create_conversations.sql`)
+- [x] sessionId in brain-chat/route.ts (History laden + speichern)
+- [x] sessionId in page.tsx (einmalig generieren + mitsenden)
+- [ ] Brain API: History an Orchestrator übergeben (studiovoicetools/efro)
+- [ ] GDPR: 24h TTL Policy
 
 ### 🔴 Sprint 4 — Add-to-Cart (studiovoicetools/efro Extension)
 ```javascript
