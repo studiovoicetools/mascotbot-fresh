@@ -58,9 +58,26 @@ const formatPriceForDisplay = (price: string): string => {
 
 const cleanTitleForSpeech = (title: string): string =>
   title
+    // URLs entfernen
+    .replace(/https?:\/\/\S+/gi, '')
+    // Markdown-Links entfernen [text](url)
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    // Zoll-Zeichen ausschreiben
+    .replace(/(\d+)\s*["″]\s*/g, '$1 Zoll ')
+    // Maßeinheiten ausschreiben
+    .replace(/(\d+)\s*mm\b/gi, '$1 Millimeter')
+    .replace(/(\d+)\s*cm\b/gi, '$1 Zentimeter')
+    .replace(/(\d+)\s*m\b/gi, '$1 Meter')
+    .replace(/(\d+)\s*kg\b/gi, '$1 Kilogramm')
+    .replace(/(\d+)\s*g\b(?!e|r|u)/gi, '$1 Gramm')
+    .replace(/(\d+)\s*ml\b/gi, '$1 Milliliter')
+    .replace(/(\d+)\s*l\b/gi, '$1 Liter')
+    // Sonderzeichen
     .replace(/[\/\\|]/g, ' ')
     .replace(/[-–—]/g, ' ')
     .replace(/[&<>'"]/g, ' ')
+    .replace(/[®™©]/g, '')
+    // Mehrfache Leerzeichen
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -99,6 +116,8 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
 
   // Tracks voice queries already handled by search_products clientTool to avoid duplicates
   const productQueryHandledRef = useRef<Set<string>>(new Set());
+  // Timestamp when search_products last showed a product card — used to suppress duplicate AI messages
+  const lastProductCardTimestampRef = useRef<number>(0);
 
   // Shadow product search for voice user messages (when search_products clientTool is not triggered)
   const triggerVoiceProductSearch = useCallback(async (query: string) => {
@@ -167,6 +186,12 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
           }));
         } catch {}
       }
+      // Suppress AI text bubble if search_products already showed a product card recently
+      const timeSinceProductCard = Date.now() - lastProductCardTimestampRef.current;
+      if (timeSinceProductCard < 8000) {
+        console.log("[LipSync] Suppressing duplicate AI message (product card shown", timeSinceProductCard, "ms ago)");
+        return;
+      }
       if (cleanMessage) {
         setMessagesRef.current(prev => [...prev, {
           text: cleanMessage,
@@ -197,10 +222,11 @@ function ElevenLabsAvatar({ dynamicVariables }: ElevenLabsAvatarProps) {
             sender: 'bot',
             products,
           }]);
+          lastProductCardTimestampRef.current = Date.now();
           if (products.length === 0) {
             return 'Leider habe ich keine passenden Produkte gefunden. Kann ich dir bei etwas anderem helfen?';
           }
-          return `Ich habe das perfekte Produkt gefunden: ${cleanTitleForSpeech(products[0].title)}, ${formatPriceForSpeech(products[0].price)}.`;
+          return `Meine Empfehlung: ${cleanTitleForSpeech(products[0].title)}, ${formatPriceForSpeech(products[0].price)}.`;
         } catch (error) {
           return 'Entschuldigung, bei der Produktsuche ist ein Fehler aufgetreten. Bitte versuche es nochmal.';
         } finally {
